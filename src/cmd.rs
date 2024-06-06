@@ -5,34 +5,17 @@ use crate::command_handler::{CommandHandler, CommandResult};
 
 /// Command interpreter implemented as struct that contains
 /// boxed CommandHandlers in a hashmap with Strings as the keys
-pub struct Cmd<R, W>
-where
-    W: io::Write + 'static,
-    R: io::BufRead + 'static,
-{
-    handles: HashMap<String, Box<dyn CommandHandler<W>>>,
+pub struct Cmd<'a, R, W> {
+    handles: HashMap<String, Box<dyn CommandHandler<W> + 'a>>,
     stdin: R,
     stdout: W,
 }
 
-impl<R, W> Cmd<R, W>
+impl<R, W> Cmd<'_, R, W>
 where
-    W: io::Write + 'static,
-    R: io::BufRead + 'static,
+    W: io::Write,
+    R: io::BufRead,
 {
-    /// Create new Cmd instance
-    pub fn new(reader: R, writer: W) -> Cmd<R, W>
-    where
-        W: io::Write,
-        R: io::Read,
-    {
-        Cmd {
-            handles: HashMap::new(),
-            stdin: reader,
-            stdout: writer,
-        }
-    }
-
     /// Start the command interpreter
     ///
     /// Handlers with return code 0 will break the loop
@@ -68,6 +51,25 @@ where
         }
         Ok(())
     }
+}
+
+impl<'a, R, W> Cmd<'a, R, W>
+where
+    W: io::Write,
+    R: io::BufRead,
+{
+    /// Create new Cmd instance
+    pub fn new(reader: R, writer: W) -> Cmd<'a, R, W>
+    where
+        W: io::Write,
+        R: io::Read,
+    {
+        Cmd {
+            handles: HashMap::new(),
+            stdin: reader,
+            stdout: writer,
+        }
+    }
 
     /// Insert new handler into the Cmd handles HashMap defined by a function or closure
     ///
@@ -75,7 +77,7 @@ where
     pub fn add_cmd_fn(
         &mut self,
         name: String,
-        handler: impl Fn(&mut W, &[&str]) -> CommandResult + 'static,
+        handler: impl Fn(&mut W, &[&str]) -> CommandResult + 'a,
     ) -> Result<(), io::Error> {
         self.add_cmd(name, handler)
     }
@@ -86,7 +88,7 @@ where
     pub fn add_cmd(
         &mut self,
         name: String,
-        handler: impl CommandHandler<W> + 'static,
+        handler: impl CommandHandler<W> + 'a,
     ) -> Result<(), io::Error> {
         match self.handles.get(&name) {
             Some(_) => write!(
@@ -103,7 +105,7 @@ where
     }
 
     #[cfg(test)]
-    fn get_cmd(&self, key: String) -> Option<&Box<dyn CommandHandler<W>>> {
+    fn get_cmd(&self, key: String) -> Option<&Box<dyn CommandHandler<W> + 'a>> {
         self.handles.get(&key)
     }
 }
@@ -173,7 +175,7 @@ mod tests {
         }
     }
 
-    fn setup() -> Cmd<io::BufReader<std::fs::File>, Vec<u8>> {
+    fn setup<'a>() -> Cmd<'a, io::BufReader<std::fs::File>, Vec<u8>> {
         let f = std::fs::File::open("test_files/test_in.txt").unwrap();
         let stdin = io::BufReader::new(f);
 
